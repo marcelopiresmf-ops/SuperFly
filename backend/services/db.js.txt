@@ -1,0 +1,91 @@
+import pkg from 'pg';
+const { Pool } = pkg;
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+export const initDB = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS flight_prices (
+        id SERIAL PRIMARY KEY,
+        origin VARCHAR(10) NOT NULL,
+        destination VARCHAR(10) NOT NULL,
+        departure_date DATE NOT NULL,
+        return_date DATE,
+        price DECIMAL(10, 2) NOT NULL,
+        currency VARCHAR(5) DEFAULT 'BRL',
+        airline VARCHAR(50),
+        link TEXT,
+        monitored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('✅ Database inicializado');
+  } catch (error) {
+    console.error('❌ Erro ao inicializar BD:', error);
+  }
+};
+
+export const saveFlightPrice = async (data) => {
+  try {
+    const { origin, destination, departure, return_date, price, currency, airline, link } = data;
+    const departureDate = typeof departure === 'string' 
+      ? departure.split('T')[0] 
+      : new Date(departure).toISOString().split('T')[0];
+
+    const query = `
+      INSERT INTO flight_prices (origin, destination, departure_date, return_date, price, currency, airline, link)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id;
+    `;
+
+    const result = await pool.query(query, [
+      origin,
+      destination,
+      departureDate,
+      return_date,
+      price,
+      currency || 'BRL',
+      airline,
+      link
+    ]);
+
+    return result.rows[0];
+  } catch (error) {
+    console.error('Erro ao salvar preço:', error);
+  }
+};
+
+export const getPriceHistory = async (origin, destination, days = 30) => {
+  try {
+    const query = `
+      SELECT 
+        monitored_at::DATE as data,
+        MIN(price) as min_price,
+        AVG(price)::INT as avg_price,
+        MAX(price) as max_price
+      FROM flight_prices
+      WHERE 
+        origin = $1 
+        AND destination = $2
+        AND monitored_at > NOW() - INTERVAL '${days} days'
+      GROUP BY monitored_at::DATE
+      ORDER BY data ASC;
+    `;
+
+    const result = await pool.query(query, [origin, destination]);
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar histórico:', error);
+    return [];
+  }
+};
+
+export const closeDB = async () => {
+  await pool.end();
+  console.log('Database conexão fechada');
+};
+
+export default pool;

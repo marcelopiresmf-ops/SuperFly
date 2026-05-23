@@ -1,0 +1,129 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import cron from 'node-cron';
+import { searchFlights } from './services/kiwi.js';
+import { sendWhatsAppAlert } from './services/whatsapp.js';
+import { initDB, saveFlightPrice, getPriceHistory } from './services/db.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors());
+app.use(express.json());
+
+await initDB();
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'SuperFly rodando! ✈️', timestamp: new Date() });
+});
+
+app.post('/api/search', async (req, res) => {
+  try {
+    const { origin, destination, departure, return_date, airline } = req.body;
+
+    if (!origin || !destination || !departure) {
+      return res.status(400).json({ error: 'Faltam parâmetros: origin, destination, departure' });
+    }
+
+    console.log(`🔍 Buscando: ${origin} → ${destination}`);
+
+    const flights = await searchFlights({
+      origin,
+      destination,
+      departure,
+      return_date,
+      airline
+    });
+
+    if (flights && flights.length > 0) {
+      for (const flight of flights) {
+        await saveFlightPrice({
+          origin,
+          destination,
+          departure,
+          return_date,
+          price: flight.price,
+          currency: flight.currency,
+          airline: flight.airline,
+          link: flight.link
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      count: flights.length,
+      flights: flights.slice(0, 5)
+    });
+  } catch (error) {
+    console.error('Erro ao buscar voos:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/history', async (req, res) => {
+  try {
+    const { origin, destination, days = 30 } = req.query;
+
+    if (!origin || !destination) {
+      return res.status(400).json({ error: 'Faltam parâmetros: origin, destination' });
+    }
+
+    const history = await getPriceHistory(origin, destination, days);
+    res.json({ success: true, data: history });
+  } catch (error) {
+    console.error('Erro ao buscar histórico:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/monitoring-status', (req, res) => {
+  res.json({
+    status: 'Ativo',
+    rotas: [
+      { origem: 'GYN', destino: 'CGH', frequencia: '24h', preço_ideal: 'R$ 990' },
+      { origem: 'GYN', destino: 'VCP', frequencia: '24h', preço_ideal: 'R$ 990' },
+      { origem: 'GYN', destino: 'MCO', frequencia: '24h', preço_ideal: 'USD 1.000-1.500' }
+    ],
+    próxima_busca: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+  });
+});
+
+cron.schedule('0 8 * * *', async () => {
+  console.log(`🔍 MONITORAMENTO AUTOMÁTICO`);
+  try {
+    const rotas = [
+      { origin: 'GYN', destination: 'CGH', departure: 'next_tuesday_morning', threshold: 990 },
+      { origin: 'GYN', destination: 'VCP', departure: 'next_tuesday_morning', threshold: 990 },
+      { origin: 'GYN', destination: 'MCO', departure: 'next_week', threshold: 1500 }
+    ];
+
+    for (const rota of rotas) {
+      try {
+        const flights = await searchFlights({
+          origin: rota.origin,
+          destination: rota.destination,
+          departure: rota.departure
+        });
+
+        if (flights && flights.length > 0) {
+          const bestFlight = flights[0];
+          console.log(`${rota.origin}-${rota.destination}: ${bestFlight.price}`);
+        }
+      } catch (err) {
+        console.error(`Erro: ${rota.origin}-${rota.destination}`, err.message);
+      }
+    }
+  } catch (error) {
+    console.error('Erro no monitoramento:', error);
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 SuperFly Backend rodando na porta ${PORT}`);
+});
+
+export default app;

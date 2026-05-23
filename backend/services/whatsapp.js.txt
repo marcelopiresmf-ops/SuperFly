@@ -1,0 +1,58 @@
+let alerts = [];
+
+export const sendWhatsAppAlert = async (message) => {
+  try {
+    const timestamp = new Date().toLocaleString('pt-BR');
+    
+    const alert = {
+      timestamp,
+      message,
+      status: 'simulado'
+    };
+
+    alerts.push(alert);
+
+    console.log(`
+╔════════════════════════════════════════╗
+║     📱 ALERTA WHATSAPP (Simulado)      ║
+╠════════════════════════════════════════╣
+║ Horário: ${timestamp}
+║ ${message.split('\n')[0]}
+╚════════════════════════════════════════╝
+    `);
+
+    return alert;
+  } catch (error) {
+    console.error('❌ Erro ao simular WhatsApp:', error.message);
+    throw error;
+  }
+};
+
+export const sendFlightAlert = async (flight) => {
+  const message = `
+🚀 SUPERFLY ALERTA!
+
+✈️ ${flight.origin} → ${flight.destination}
+💰 ${flight.currency} ${flight.price}
+🔖 ${flight.airline}
+📅 ${flight.departure}
+
+Preço ideal atingido!
+
+👉 Comprar: ${flight.link}
+  `.trim();
+
+  return sendWhatsAppAlert(message);
+};
+
+export const getAlertHistory = () => {
+  return alerts;
+};
+
+export const testConnection = async () => {
+  return {
+    success: true,
+    message: 'Sistema pronto!',
+    status: 'simulado'
+  };
+};

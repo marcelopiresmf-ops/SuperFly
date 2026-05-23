@@ -1,0 +1,54 @@
+import axios from 'axios';
+
+const KIWI_API_KEY = process.env.SKYSCANNER_API_KEY;
+const SKYSCANNER_BASE_URL = 'https://rapidapi.com/api/skyscanner';
+
+export const searchFlights = async (params) => {
+  try {
+    const { origin, destination, departure, return_date, airline } = params;
+
+    const departureDate = typeof departure === 'string' 
+      ? departure.split('T')[0] 
+      : new Date(departure).toISOString().split('T')[0];
+
+    const query = {
+      origin,
+      destination,
+      departureDate,
+      returnDate: return_date || departureDate,
+      currency: 'BRL',
+      limit: 50
+    };
+
+    const response = await axios.get('https://api.skyscanner.com/v3/flights/search', {
+      headers: {
+        'x-rapidapi-key': KIWI_API_KEY,
+        'x-rapidapi-host': 'skyscanner-api.p.rapidapi.com'
+      },
+      params: query
+    });
+
+    if (!response.data || !response.data.results) {
+      return [];
+    }
+
+    return response.data.results.map(flight => ({
+      id: flight.id || Math.random(),
+      airline: flight.airlines?.[0] || 'Desconhecida',
+      price: Math.round(flight.price || 0),
+      currency: 'BRL',
+      departure: flight.departure_time || new Date().toISOString(),
+      arrival: flight.arrival_time || new Date().toISOString(),
+      duration: flight.duration || 0,
+      stopover: flight.stops || 0,
+      link: `https://www.skyscanner.com.br/transport/flights/${origin}/${destination}/${departureDate}/`
+    }));
+  } catch (error) {
+    console.error('Erro Skyscanner API:', error.message);
+    return [];
+  }
+};
+
+export const getFlightHistory = async (origin, destination, days = 30) => {
+  return [];
+};
